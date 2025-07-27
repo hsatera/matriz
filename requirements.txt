@@ -1,3 +1,7 @@
-streamlit
-pandas
-plotly
+streamlit>=1.33.0
+pandas>=2.0.0
+regex>=2023.10.3 # or re
+plotly>=5.0.0
+nltk>=3.8.0
+wordcloud>=1.9.0
+matplotlib>=3.7.0
