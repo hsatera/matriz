@@ -41,83 +41,74 @@ def extract_labels(label_string):
 
 df['Parsed_Labels'] = df['notes'].apply(extract_labels)
 
-# --- Filtros Disponíveis ---
-PAISES = ['Angola', 'Argentina', 'Brasil', 'Cuba', 'Portugal', 'Uruguai']
-METODOLOGIAS = ['Estudo misto (quali-quanti)', 'Estudo Qualitativo', 'Estudo quantitativo', 'Revisão literatura']
-TIPOS_ESTUDO = ['Definição Ações Coletivas Cuidado', 'Reflexão teórica Ações Coletivas de Cuidado', 'Relato Experiência Ações Coletivas de Cuidado']
-EIXOS_MATRIZ = ['Doenças crônicas', 'Saúde Mental', 'Saúde Bucal', 'Infância e Adolescência', 'Gênero e Sexualidade', 'Deficiência Intelectual']
-IDIOMAS = ['Língua Espanhola', 'Língua Inglesa', 'Língua Portuguesa']
+# --- Configuração dos Filtros Disponíveis ---
+FILTERS_CONFIG = {
+    "País": ['Angola', 'Argentina', 'Brasil', 'Cuba', 'Portugal', 'Uruguai'],
+    "Metodologia": ['Estudo misto (quali-quanti)', 'Estudo Qualitativo', 'Estudo quantitativo', 'Revisão literatura'],
+    "Tipo de Estudo": ['Definição Ações Coletivas Cuidado', 'Reflexão teórica Ações Coletivas de Cuidado', 'Relato Experiência Ações Coletivas de Cuidado'],
+    "Eixo Matriz": ['Doenças crônicas', 'Saúde Mental', 'Saúde Bucal', 'Infância e Adolescência', 'Gênero e Sexualidade', 'Deficiência Intelectual'],
+    "Idioma": ['Língua Espanhola', 'Língua Inglesa', 'Língua Portuguesa']
+}
 
 # --- Barra Lateral de Filtros ---
 st.sidebar.header("⚙️ Filtros")
 
-selected_paises = st.sidebar.multiselect("País", PAISES)
-selected_metodologias = st.sidebar.multiselect("Metodologia", METODOLOGIAS)
-selected_tipos_estudo = st.sidebar.multiselect("Tipo de Estudo", TIPOS_ESTUDO)
-selected_eixos_matriz = st.sidebar.multiselect("Eixo Matriz", EIXOS_MATRIZ)
-selected_idiomas = st.sidebar.multiselect("Idioma", IDIOMAS)
+# Dicionários para armazenar as opções selecionadas e os estados dos checkboxes "sem label"
+selected_options_dict = {}
+show_without_label_dict = {}
 
-# Novo filtro: Mostrar artigos sem labels
-show_articles_without_labels = st.sidebar.checkbox("Mostrar artigos sem labels", key="filter_without_labels")
+for filter_name, options_list in FILTERS_CONFIG.items():
+    # Multiselect para seleção de labels
+    selected_options_dict[filter_name] = st.sidebar.multiselect(filter_name, options_list, key=f"select_{filter_name.lower().replace(' ', '_')}")
+    # Checkbox para mostrar artigos sem labels desta categoria
+    show_without_label_dict[filter_name] = st.sidebar.checkbox(f"Mostrar artigos sem {filter_name}", key=f"without_{filter_name.lower().replace(' ', '_')}")
+    st.sidebar.markdown("---") # Separador para clareza na sidebar
 
 # --- Lógica de Filtragem ---
 filtered_df = df.copy()
 
-def check_labels(article_labels, selected_options):
+def check_labels_for_inclusion(article_labels, selected_options):
+    """Verifica se o artigo possui alguma das labels selecionadas para inclusão."""
     if not selected_options:
-        return True
-    article_labels = article_labels if isinstance(article_labels, list) else []
+        return True # Se nenhuma opção for selecionada, este filtro não se aplica (inclui todos)
     article_labels_lower = [label.lower().strip() for label in article_labels]
     selected_options_lower = [option.lower().strip() for option in selected_options]
     return any(option in article_labels_lower for option in selected_options_lower)
 
-# Aplicar filtros de INCLUSÃO
-for filtro, selecao in zip(
-    ['País', 'Metodologia', 'Tipo de Estudo', 'Eixo Matriz', 'Idioma'],
-    [selected_paises, selected_metodologias, selected_tipos_estudo, selected_eixos_matriz, selected_idiomas]
-):
-    if selecao:
-        filtered_df = filtered_df[filtered_df['Parsed_Labels'].apply(lambda x: check_labels(x, selecao))]
+def check_labels_for_exclusion(article_labels, category_options):
+    """Verifica se o artigo NÃO possui NENHUMA label da lista de opções da categoria."""
+    # Se o artigo não tem labels extraídas, ele é considerado "sem labels desta categoria"
+    if not article_labels:
+        return True
+    article_labels_lower = [label.lower().strip() for label in article_labels]
+    category_options_lower = [option.lower().strip() for option in category_options]
+    # Retorna True se NENHUMA label do artigo estiver presente nas opções da categoria
+    return not any(option in article_labels_lower for option in category_options_lower)
 
-# Aplicar filtro de EXCLUSÃO (Mostrar artigos SEM labels)
-if show_articles_without_labels:
-    # Combina todas as labels possíveis das listas predefinidas em um conjunto para busca rápida
-    all_defined_labels_set = set()
-    for label_list in [PAISES, METODOLOGIAS, TIPOS_ESTUDO, EIXOS_MATRIZ, IDIOMAS]:
-        for label in label_list:
-            all_defined_labels_set.add(label.lower().strip())
+# Aplicar filtros com base nas seleções do usuário
+for filter_name, options_list in FILTERS_CONFIG.items():
+    selected_options = selected_options_dict[filter_name]
+    show_without = show_without_label_dict[filter_name]
 
-    def article_has_any_defined_label(article_labels):
-        # Se o artigo não tem labels extraídas, ele é considerado "sem labels definidas"
-        if not article_labels:
-            return False
-        # Verifica se alguma das labels do artigo está na lista de labels definidas
-        for label in article_labels:
-            if label.lower().strip() in all_defined_labels_set:
-                return True # Encontrou pelo menos uma label definida
-        return False # Nenhuma label definida encontrada neste artigo
-
-    # Filtra para manter artigos que NÃO possuem nenhuma das labels definidas
-    filtered_df = filtered_df[~filtered_df['Parsed_Labels'].apply(article_has_any_defined_label)]
-
+    if show_without:
+        # Se o checkbox "Mostrar artigos sem [Categoria]" estiver marcado, filtra artigos que NÃO possuem
+        # NENHUMA label daquela categoria específica.
+        filtered_df = filtered_df[filtered_df['Parsed_Labels'].apply(lambda x: check_labels_for_exclusion(x, options_list))]
+    elif selected_options:
+        # Se o checkbox "Mostrar artigos sem [Categoria]" NÃO estiver marcado E opções específicas
+        # forem selecionadas no multiselect, filtra para inclusão.
+        filtered_df = filtered_df[filtered_df['Parsed_Labels'].apply(lambda x: check_labels_for_inclusion(x, selected_options))]
 
 # --- Seção: Gráficos de Resumo no Topo ---
 if not filtered_df.empty:
     st.header("📊 Visão Geral dos Resultados Filtrados")
-
-    filters_to_plot = {
-        "País": PAISES,
-        "Metodologia": METODOLOGIAS,
-        "Tipo de Estudo": TIPOS_ESTUDO,
-        "Eixo Matriz": EIXOS_MATRIZ,
-        "Idioma": IDIOMAS
-    }
 
     def plot_summary_component(data_frame, filter_name, options_list):
         counts = {}
         for labels_list in data_frame['Parsed_Labels']:
             if isinstance(labels_list, list):
                 for label in labels_list:
+                    # Conta apenas as labels que fazem parte das opções definidas para este filtro
                     if label.lower().strip() in [opt.lower().strip() for opt in options_list]:
                         original_label = next((opt for opt in options_list if opt.lower().strip() == label.lower().strip()), label)
                         counts[original_label] = counts.get(original_label, 0) + 1
@@ -134,13 +125,13 @@ if not filtered_df.empty:
         return None
 
     # Exibe os gráficos em colunas (2 por linha)
-    filter_names = list(filters_to_plot.keys())
+    filter_names = list(FILTERS_CONFIG.keys())
     for i in range(0, len(filter_names), 2):
         cols = st.columns(2)
         for j in range(2):
             if i + j < len(filter_names):
                 name = filter_names[i + j]
-                fig = plot_summary_component(filtered_df, name, filters_to_plot[name])
+                fig = plot_summary_component(filtered_df, name, FILTERS_CONFIG[name])
                 if fig:
                     cols[j].plotly_chart(fig, use_container_width=True)
 
