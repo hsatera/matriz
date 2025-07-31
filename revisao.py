@@ -57,6 +57,9 @@ selected_tipos_estudo = st.sidebar.multiselect("Tipo de Estudo", TIPOS_ESTUDO)
 selected_eixos_matriz = st.sidebar.multiselect("Eixo Matriz", EIXOS_MATRIZ)
 selected_idiomas = st.sidebar.multiselect("Idioma", IDIOMAS)
 
+# Novo filtro: Mostrar artigos sem labels
+show_articles_without_labels = st.sidebar.checkbox("Mostrar artigos sem labels", key="filter_without_labels")
+
 # --- Lógica de Filtragem ---
 filtered_df = df.copy()
 
@@ -68,13 +71,35 @@ def check_labels(article_labels, selected_options):
     selected_options_lower = [option.lower().strip() for option in selected_options]
     return any(option in article_labels_lower for option in selected_options_lower)
 
-# Aplicar filtros
+# Aplicar filtros de INCLUSÃO
 for filtro, selecao in zip(
     ['País', 'Metodologia', 'Tipo de Estudo', 'Eixo Matriz', 'Idioma'],
     [selected_paises, selected_metodologias, selected_tipos_estudo, selected_eixos_matriz, selected_idiomas]
 ):
     if selecao:
         filtered_df = filtered_df[filtered_df['Parsed_Labels'].apply(lambda x: check_labels(x, selecao))]
+
+# Aplicar filtro de EXCLUSÃO (Mostrar artigos SEM labels)
+if show_articles_without_labels:
+    # Combina todas as labels possíveis das listas predefinidas em um conjunto para busca rápida
+    all_defined_labels_set = set()
+    for label_list in [PAISES, METODOLOGIAS, TIPOS_ESTUDO, EIXOS_MATRIZ, IDIOMAS]:
+        for label in label_list:
+            all_defined_labels_set.add(label.lower().strip())
+
+    def article_has_any_defined_label(article_labels):
+        # Se o artigo não tem labels extraídas, ele é considerado "sem labels definidas"
+        if not article_labels:
+            return False
+        # Verifica se alguma das labels do artigo está na lista de labels definidas
+        for label in article_labels:
+            if label.lower().strip() in all_defined_labels_set:
+                return True # Encontrou pelo menos uma label definida
+        return False # Nenhuma label definida encontrada neste artigo
+
+    # Filtra para manter artigos que NÃO possuem nenhuma das labels definidas
+    filtered_df = filtered_df[~filtered_df['Parsed_Labels'].apply(article_has_any_defined_label)]
+
 
 # --- Seção: Gráficos de Resumo no Topo ---
 if not filtered_df.empty:
