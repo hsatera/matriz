@@ -1,6 +1,6 @@
 streamlit
 pandas
 plotly
-nltk
+nltk==3.7  # Altere esta linha
 wordcloud
 matplotlib
