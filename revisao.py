@@ -9,11 +9,10 @@ from nltk.corpus import stopwords
 from nltk.tokenize import RegexpTokenizer
 import os
 
-# Baixar recursos do NLTK se necessário (silenciosamente para não poluir o console do Streamlit)
-try:
-    nltk.data.find('corpora/stopwords')
-except nltk.downloader.DownloadError:
-    nltk.download('stopwords', quiet=True)
+# Baixar recursos do NLTK se necessário.
+# A função nltk.download() já verifica se os dados existem antes de baixar,
+# então o bloco try/except não é mais necessário e causava erro em versões recentes.
+nltk.download('stopwords', quiet=True)
 
 # --- Configuração da Página Streamlit ---
 st.set_page_config(layout="wide", page_title="Filtro de Artigos Científicos com Resumo")
