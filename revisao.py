@@ -40,7 +40,7 @@ def load_data(file_path):
     return df
 
 try:
-    df = load_data("selecionados.csv")
+    df = load_data("lista.csv")
 except FileNotFoundError:
     st.error("Erro: O arquivo 'selecionados.csv' não foi encontrado. Por favor, certifique-se de que o arquivo está no mesmo diretório.")
     st.stop()
@@ -272,3 +272,4 @@ st.markdown("""
 * **Funcionalidade de Busca por Texto:** Inclua uma caixa de texto para pesquisar por palavras-chave no título, resumo ou autores.
 """)
 st.caption("🔧 Desenvolvido com Streamlit e Plotly")
+
