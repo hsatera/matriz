@@ -4,3 +4,4 @@ plotly
 nltk==3.7  # Altere esta linha
 wordcloud
 matplotlib
+openpyxl
