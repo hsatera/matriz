@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 from nltk.corpus import stopwords
 from nltk.tokenize import RegexpTokenizer
 import os
+import io
 
 # Baixar recursos do NLTK se necessário.
 # A função nltk.download() já verifica se os dados existem antes de baixar.
@@ -28,6 +29,7 @@ def load_data(file_path):
     df = pd.read_csv(file_path)
     df['notes'] = df['notes'].fillna('')
     df['abstract'] = df['abstract'].fillna('')
+    df['keywords'] = df['keywords'].fillna('Não informado')
     if 'authors' not in df.columns:
         df['authors'] = 'Não informado'
     if 'url' not in df.columns:
@@ -40,12 +42,12 @@ def load_data(file_path):
     return df
 
 try:
-    df = load_data("lista.csv")
+    df = load_data("selecionados.csv")
 except FileNotFoundError:
     st.error("Erro: O arquivo 'selecionados.csv' não foi encontrado. Por favor, certifique-se de que o arquivo está no mesmo diretório.")
     st.stop()
 
-# --- Função para extrair labels ---
+# --- Funções de Extração ---
 def extract_labels(label_string):
     """
     Extrai as labels de uma string formatada como 'RAYYAN-LABELS: ...'.
@@ -59,7 +61,15 @@ def extract_labels(label_string):
         return [label.strip() for label in labels if label.strip()]
     return []
 
+# Lista fixa de revisores fornecida pelo usuário
+all_reviewers = ['andré', 'daniela', 'luana', 'henrique', 'carolina', 'humberto', 'mauricio', 'rodrigo']
+
+# Cria uma nova coluna 'Reviewers' no DataFrame original, verificando a presença dos nomes na coluna 'notes'
+df['Reviewers'] = df['notes'].apply(lambda s: [rev for rev in all_reviewers if rev.lower() in s.lower()])
 df['Parsed_Labels'] = df['notes'].apply(extract_labels)
+
+# Adiciona uma nova coluna 'Is_Perola' baseada na presença de 'Pérola' na coluna 'notes'
+df['Is_Perola'] = df['notes'].apply(lambda s: 'Sim' if 'pérola' in s.lower() else 'Não')
 
 # --- Definição das Opções de Filtro ---
 # Opções para "Sem Label"
@@ -75,6 +85,7 @@ METODOLOGIAS = ['Estudo misto (quali-quanti)', 'Estudo Qualitativo', 'Estudo qua
 TIPOS_ESTUDO = ['Definição Ações Coletivas Cuidado', 'Reflexão teórica Ações Coletivas de Cuidado', 'Relato Experiência Ações Coletivas de Cuidado']
 EIXOS_MATRIZ = ['Doenças crônicas', 'Saúde Mental', 'Saúde Bucal', 'Infância e Adolescência', 'Gênero e Sexualidade', 'Deficiência Intelectual']
 IDIOMAS = ['Língua Espanhola', 'Língua Inglesa', 'Língua Portuguesa']
+PEROLA_OPTIONS = ['Sim', 'Não']
 
 # Listas de opções para os widgets da barra lateral (com a opção "Sem Label")
 PAISES_OPTIONS = [SEM_PAIS] + PAISES
@@ -82,15 +93,18 @@ METODOLOGIAS_OPTIONS = [SEM_METODOLOGIA] + METODOLOGIAS
 TIPOS_ESTUDO_OPTIONS = [SEM_TIPO_ESTUDO] + TIPOS_ESTUDO
 EIXOS_MATRIZ_OPTIONS = [SEM_EIXO_MATRIZ] + EIXOS_MATRIZ
 IDIOMAS_OPTIONS = [SEM_IDIOMA] + IDIOMAS
+PEROLA_FILTER_OPTIONS = ['Ambos'] + PEROLA_OPTIONS
 
 # --- Barra Lateral de Filtros ---
 st.sidebar.header("⚙️ Filtros")
 
+selected_reviewers = st.sidebar.multiselect("Revisor(a)", all_reviewers)
 selected_paises = st.sidebar.multiselect("País", PAISES_OPTIONS)
 selected_metodologias = st.sidebar.multiselect("Metodologia", METODOLOGIAS_OPTIONS)
 selected_tipos_estudo = st.sidebar.multiselect("Tipo de Estudo", TIPOS_ESTUDO_OPTIONS)
 selected_eixos_matriz = st.sidebar.multiselect("Eixo Matriz", EIXOS_MATRIZ_OPTIONS)
 selected_idiomas = st.sidebar.multiselect("Idioma", IDIOMAS_OPTIONS)
+selected_perola = st.sidebar.selectbox("Pérola", PEROLA_FILTER_OPTIONS, index=0)
 
 # --- Lógica de Filtragem Avançada ---
 filtered_df = df.copy()
@@ -126,17 +140,76 @@ def apply_filter_logic(df, selected_options, all_category_options, no_label_stri
 
     return df[df['Parsed_Labels'].apply(check_row)]
 
-# Aplica os filtros um a um
+# Aplica o filtro de revisores
+if selected_reviewers:
+    filtered_df = filtered_df[filtered_df['Reviewers'].apply(lambda x: any(rev in x for rev in selected_reviewers))]
+
+# Aplica os outros filtros um a um
 filtered_df = apply_filter_logic(filtered_df, selected_paises, PAISES, SEM_PAIS)
 filtered_df = apply_filter_logic(filtered_df, selected_metodologias, METODOLOGIAS, SEM_METODOLOGIA)
 filtered_df = apply_filter_logic(filtered_df, selected_tipos_estudo, TIPOS_ESTUDO, SEM_TIPO_ESTUDO)
 filtered_df = apply_filter_logic(filtered_df, selected_eixos_matriz, EIXOS_MATRIZ, SEM_EIXO_MATRIZ)
 filtered_df = apply_filter_logic(filtered_df, selected_idiomas, IDIOMAS, SEM_IDIOMA)
 
+# Aplica o filtro de Pérola
+if selected_perola != 'Ambos':
+    filtered_df = filtered_df[filtered_df['Is_Perola'] == selected_perola]
+
+# --- Função para preparar o DataFrame para exportação ---
+def create_export_df(df_filtered):
+    """
+    Cria um novo DataFrame com as colunas específicas para exportação.
+    As colunas são reordenadas conforme a solicitação do usuário.
+    """
+    export_data = []
+    for _, row in df_filtered.iterrows():
+        # Extrai labels específicas para as colunas
+        country = next((label for label in row['Parsed_Labels'] if label in PAISES), 'Não informado')
+        study_type = next((label for label in row['Parsed_Labels'] if label in TIPOS_ESTUDO), 'Não informado')
+        methodology = next((label for label in row['Parsed_Labels'] if label in METODOLOGIAS), 'Não informado')
+        eixo_matriz = next((label for label in row['Parsed_Labels'] if label in EIXOS_MATRIZ), 'Não informado')
+        idioma = next((label for label in row['Parsed_Labels'] if label in IDIOMAS), 'Não informado')
+        
+        export_row = {
+            'Título estudo': row['title'],
+            'Autor(es)': row['authors'],
+            'Ano': int(row['year']) if pd.notna(row['year']) else 'Não informado',
+            'País': country,
+            'Tipo de estudo': study_type,
+            'Metodologia': methodology,
+            'Eixo Matriz': eixo_matriz,
+            'Idioma': idioma,
+            'Principais resultados': '',
+            'Pérola': row['Is_Perola'],
+            'Revisor(es)': ', '.join(row['Reviewers']) if row['Reviewers'] else 'Nenhum'
+        }
+        export_data.append(export_row)
+    
+    # Cria o DataFrame com a ordem de colunas desejada
+    columns_order = [
+        'Título estudo', 'Autor(es)', 'Ano', 'País', 'Tipo de estudo',
+        'Metodologia', 'Eixo Matriz', 'Idioma', 'Principais resultados', 'Pérola', 'Revisor(es)'
+    ]
+    
+    return pd.DataFrame(export_data, columns=columns_order)
 
 # --- Seção: Gráficos de Resumo no Topo ---
 if not filtered_df.empty:
     st.header("📊 Visão Geral dos Resultados Filtrados")
+    
+    # Prepara os dados para exportação para XLSX
+    df_export = create_export_df(filtered_df)
+    output = io.BytesIO()
+    df_export.to_excel(output, index=False, engine='openpyxl')
+    processed_data = output.getvalue()
+
+    st.download_button(
+        label="📥 Baixar lista filtrada (.xlsx)",
+        data=processed_data,
+        file_name='artigos_filtrados.xlsx',
+        mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    )
+    
     st.subheader(f"Total de Artigos Encontrados: {len(filtered_df)}")
 
     filters_to_plot = {
@@ -247,6 +320,8 @@ if not filtered_df.empty:
         st.markdown(f"**Título:** {row['title']}")
         st.markdown(f"**Autores:** {row['authors']}")
         st.markdown(f"**Ano:** {int(row['year']) if pd.notna(row['year']) else 'Não informado'}")
+        st.markdown(f"**Pérola:** {row['Is_Perola']}")
+        st.markdown(f"**Revisores:** {', '.join(row['Reviewers']) if row['Reviewers'] else 'Nenhum'}")
         st.markdown(f"**Labels:** {', '.join(row['Parsed_Labels']) if row['Parsed_Labels'] else 'Nenhum'}")
 
         if row['abstract'].strip():
@@ -268,8 +343,7 @@ st.markdown("""
 * **Gráficos de Treemap/Sunburst:** Explore o uso de `plotly.express.treemap` ou `plotly.express.sunburst` para visualizar dados hierárquicos.
 * **Filtros Interativos nos Gráficos:** Implemente a funcionalidade de clicar em uma barra ou fatia do gráfico para filtrar os artigos.
 * **Tabela Interativa para Artigos:** Utilize `st.dataframe` para apresentar os resultados em uma tabela interativa com busca e classificação.
-* **Exportação de Dados:** Adicione um botão para permitir que os usuários exportem os artigos filtrados para CSV ou Excel.
 * **Funcionalidade de Busca por Texto:** Inclua uma caixa de texto para pesquisar por palavras-chave no título, resumo ou autores.
 """)
 st.caption("🔧 Desenvolvido com Streamlit e Plotly")
-
+c
